@@ -1,0 +1,90 @@
+Sub Process_Exported_Data()
+    Dim wbSource As Workbook
+    Dim wbTarget As Workbook
+    Dim ws As Worksheet, wsMaster As Worksheet
+    Dim masterDict As Object
+    Dim srcPath As String, srcFile As String
+    Dim i As Long, key As String
+    Dim lastRowMaster As Long, lastRow As Long
+    Dim colID As String
+    Dim lastCol As Long
+    Dim targetFile As String
+
+    Application.ScreenUpdating = False
+    Application.DisplayAlerts = False
+
+    ' --- Cấu hình ---
+    colID = "A" ' cột ID dùng để match
+    srcPath = ThisWorkbook.Path & "\"    ' cùng folder với file macro
+    srcFile = Dir(srcPath & "export*.xlsx") ' tên file export bắt đầu bằng "export"
+    targetFile = srcPath & "merged_output.xlsx"
+
+    ' --- Kiểm tra file nguồn ---
+    If srcFile = "" Then
+        MsgBox "❌ Không tìm thấy file export*.xlsx trong folder hiện tại!", vbCritical
+        Exit Sub
+    End If
+
+    ' --- Mở file nguồn ---
+    Set wbSource = Workbooks.Open(srcPath & srcFile)
+    Set wsMaster = wbSource.Sheets("Sheet_9")
+
+    ' --- Tạo dictionary từ Sheet_9 ---
+    Set masterDict = CreateObject("Scripting.Dictionary")
+    lastRowMaster = wsMaster.Cells(wsMaster.Rows.Count, colID).End(xlUp).Row
+    For i = 2 To lastRowMaster
+        key = CStr(wsMaster.Cells(i, colID).Value)
+        If Len(key) > 0 Then
+            masterDict(key) = Array(wsMaster.Cells(i, "B").Value, wsMaster.Cells(i, "C").Value)
+        End If
+    Next i
+
+    ' --- Tạo file kết quả ---
+    Set wbTarget = Workbooks.Add
+
+    ' --- Copy tất cả sheet ---
+    For Each ws In wbSource.Worksheets
+        ws.Copy After:=wbTarget.Sheets(wbTarget.Sheets.Count)
+        wbTarget.Sheets(wbTarget.Sheets.Count).Name = ws.Name
+    Next ws
+
+    ' Xóa sheet mặc định (Sheet1...)
+    On Error Resume Next
+    wbTarget.Sheets("Sheet1").Delete
+    wbTarget.Sheets("Sheet2").Delete
+    wbTarget.Sheets("Sheet3").Delete
+    On Error GoTo 0
+
+    ' --- Thêm 2 cột từ master vào Sheet_1~Sheet_8 ---
+    Dim wst As Worksheet
+    For Each wst In wbTarget.Worksheets
+        If Left(wst.Name, 6) = "Sheet_" And wst.Name <> "Sheet_9" Then
+            lastRow = wst.Cells(wst.Rows.Count, colID).End(xlUp).Row
+            lastCol = wst.Cells(1, wst.Columns.Count).End(xlToLeft).Column
+
+            wst.Cells(1, lastCol + 1).Value = "Extra_1"
+            wst.Cells(1, lastCol + 2).Value = "Extra_2"
+
+            For i = 2 To lastRow
+                key = CStr(wst.Cells(i, colID).Value)
+                If masterDict.exists(key) Then
+                    wst.Cells(i, lastCol + 1).Value = masterDict(key)(0)
+                    wst.Cells(i, lastCol + 2).Value = masterDict(key)(1)
+                End If
+            Next i
+
+            ' Đổi tên sheet cho trực quan
+            wst.Name = Replace(wst.Name, "Sheet_", "Khu_")
+        End If
+    Next wst
+
+    ' --- Lưu file kết quả ---
+    wbTarget.SaveAs targetFile, FileFormat:=xlOpenXMLWorkbook
+    wbTarget.Close SaveChanges:=False
+    wbSource.Close SaveChanges:=False
+
+    Application.DisplayAlerts = True
+    Application.ScreenUpdating = True
+
+    MsgBox "✅ Hoàn tất! File kết quả: " & targetFile, vbInformation
+End Sub
